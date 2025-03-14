@@ -28,14 +28,13 @@ const legendColors = [
 ];
 
 const MediaPipeSegmenter: React.FC = () => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null); // ウェブカメラの映像を表示するためのビデオ要素
+  const canvasRef = useRef<HTMLCanvasElement>(null); // セグメンテーション後の画像を表示するためのキャンバス
   const [imageSegmenter, setImageSegmenter] = useState<ImageSegmenter | null>(
     null
   );
-  const webcamRunningRef = useRef(false);
-  const [runningMode, setRunningMode] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
-
+  const webcamRunningRef = useRef(false); // ウェブカメラが動いているかどうか
+  const [runningMode, setRunningMode] = useState<'IMAGE' | 'VIDEO'>('IMAGE'); // セグメンテーションの実行モード
   useEffect(() => {
     const loadModel = async () => {
       const fileset = await FilesetResolver.forVisionTasks(
@@ -65,6 +64,8 @@ const MediaPipeSegmenter: React.FC = () => {
 
     const constraints = { video: true };
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+    // ビデオを再生
     if (videoRef.current) {
       videoRef.current.srcObject = stream;
       videoRef.current.play();
@@ -72,28 +73,30 @@ const MediaPipeSegmenter: React.FC = () => {
 
     webcamRunningRef.current = true;
 
+    // ビデオからフレームを取得してセグメンテーションを実行
     const processWebcam = async () => {
       if (!canvasRef.current || !videoRef.current || !webcamRunningRef.current)
         return;
-      const video = videoRef.current;
-      const ctx = canvasRef.current.getContext('2d');
-      if (!ctx) return;
+      const nowVideo = videoRef.current; // 現在写しているビデオ要素
+      const refContext = canvasRef.current.getContext('2d');
+      if (!refContext) return;
 
       // 動画のメタデータが読み込まれるまで待つ
-      if (video.videoWidth === 0 || video.videoHeight === 0) {
+      if (nowVideo.videoWidth === 0 || nowVideo.videoHeight === 0) {
         console.warn('Video dimensions are not ready yet. Waiting...');
         await new Promise((resolve) => {
-          video.addEventListener('loadedmetadata', resolve, { once: true });
+          nowVideo.addEventListener('loadedmetadata', resolve, { once: true });
         });
       }
 
       // 再度チェック
-      if (video.videoWidth === 0 || video.videoHeight === 0) {
+      if (nowVideo.videoWidth === 0 || nowVideo.videoHeight === 0) {
         console.error('Video dimensions are still 0. Skipping frame.');
         return;
       }
 
-      ctx.drawImage(
+      // キャンバスにビデオのフレームを描画(セグメンテーションのため)
+      refContext.drawImage(
         videoRef.current,
         0,
         0,
@@ -110,8 +113,8 @@ const MediaPipeSegmenter: React.FC = () => {
         videoRef.current,
         startTimeMs,
         (result) => {
-          if (!ctx) return;
-          const imageData = ctx.getImageData(
+          if (!refContext) return;
+          const imageData = refContext.getImageData(
             0,
             0,
             videoRef.current?.videoWidth || 0,
@@ -122,6 +125,7 @@ const MediaPipeSegmenter: React.FC = () => {
           if (!mask) return;
           let j = 0;
           for (let i = 0; i < mask.length; i++) {
+            // 赤いところが人体。それ以外は黄色
             const color =
               legendColors[Math.round(mask[i] * 255) % legendColors.length];
             imageData.data[j] = (color[0] + imageData.data[j]) / 2;
@@ -130,7 +134,8 @@ const MediaPipeSegmenter: React.FC = () => {
             imageData.data[j + 3] = (color[3] + imageData.data[j + 3]) / 2;
             j += 4;
           }
-          ctx.putImageData(imageData, 0, 0);
+          // キャンバスにセグメンテーション結果を描画
+          refContext.putImageData(imageData, 0, 0);
           if (webcamRunningRef.current) requestAnimationFrame(processWebcam);
         }
       );
